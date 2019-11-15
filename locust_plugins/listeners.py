@@ -20,7 +20,23 @@ from locust import events
 GRAFANA_URL = os.environ["LOCUST_GRAFANA_URL"]
 
 
-class TimescaleListener:  # pylint: disable=R0902
+class BaseListener:
+    """
+    Base class for the listenres. Declares an interface for listeners.
+    """
+
+    def __init__(self):
+        events.request_success += self.request_success
+        events.request_failure += self.request_failure
+
+    def request_success(self, request_type, name, response_time, response_length, **_kwargs):
+        pass
+
+    def request_failure(self, request_type, name, response_time, response_length, exception, **_kwargs):
+        pass
+
+
+class TimescaleListener(BaseListener):  # pylint: disable=R0902
     """
     Timescale logs locust samples/events to a Postgres Timescale database.
     It relies on the standard postgres env vars (like PGHOST, PGPORT etc).
@@ -31,11 +47,14 @@ class TimescaleListener:  # pylint: disable=R0902
     """
 
     def __init__(self, testplan, env, *, profile_name="", description=""):
+        super().__init__()
+
         try:
             self._conn = psycopg2.connect(host=os.environ["PGHOST"])
         except Exception:
             logging.error(
-                "Use standard postgres env vars to specify where to report locust samples (https://www.postgresql.org/docs/11/libpq-envars.html)"
+                "Use standard postgres env vars to specify where to report locust samples ("
+                "https://www.postgresql.org/docs/11/libpq-envars.html) "
             )
             raise
         self._conn.autocommit = True
@@ -65,8 +84,6 @@ class TimescaleListener:  # pylint: disable=R0902
         if not is_slave():
             self.log_start_testrun()
 
-        events.request_success += self.request_success
-        events.request_failure += self.request_failure
         events.quitting += self.quitting
         atexit.register(self.exit)
 
@@ -176,14 +193,13 @@ class TimescaleListener:  # pylint: disable=R0902
             self._conn.close()
 
 
-class PrintListener:  # pylint: disable=R0902
+class PrintListener(BaseListener):  # pylint: disable=R0902
     """
     Print every response (useful when debugging a single locust)
     """
 
     def __init__(self):
-        events.request_success += self.request_success
-        events.request_failure += self.request_failure
+        super().__init__()
         print("type\tname\ttime\tlength\tsuccess\texception")
 
     def request_success(self, request_type, name, response_time, response_length, **_kwargs):
